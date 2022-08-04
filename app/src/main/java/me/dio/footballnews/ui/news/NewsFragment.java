@@ -1,62 +1,64 @@
 package me.dio.footballnews.ui.news;
 
-import android.os.Bundle;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
+import android.os.AsyncTask;
 
 import androidx.annotation.NonNull;
-import androidx.fragment.app.Fragment;
-import androidx.lifecycle.ViewModelProvider;
-import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.MutableLiveData;
+import androidx.lifecycle.ViewModel;
 
-import me.dio.footballnews.MainActivity;
-import me.dio.footballnews.databinding.FragmentNewsBinding;
-import me.dio.footballnews.ui.adapter.NewsAdapter;
-import me.dio.footballnews.ui.adapter.NewsAdapter;
+import java.util.List;
 
-public class NewsFragment extends Fragment {
+import me.dio.footballnews.data.SoccerNewsRepository;
+import me.dio.footballnews.domain.News;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
-    private FragmentNewsBinding binding;
+class NewsViewModel extends ViewModel {
 
-    public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
-        NewsViewModel newsViewModel = new ViewModelProvider(this).get(NewsViewModel.class);
+    public enum State {
+        DOING, DONE, ERROR;
+    }
 
-        binding = FragmentNewsBinding.inflate(inflater, container, false);
-        View root = binding.getRoot();
+    private final MutableLiveData<List<News>> news = new MutableLiveData<>();
+    private final MutableLiveData<State> state = new MutableLiveData<>();
 
-        binding.rvNews.setLayoutManager(new LinearLayoutManager(getContext()));
-        newsViewModel.getNews().observe(getViewLifecycleOwner(), news -> {
-            binding.rvNews.setAdapter(new NewsAdapter(news, updatedNews -> {
-                MainActivity activity = (MainActivity) getActivity();
-                if (activity != null) {
-                    activity.getDb().newsDao().save(updatedNews);
+    public NewsViewModel() {
+        this.findNews();
+    }
+
+    public void findNews() {
+        state.setValue(State.DOING);
+        SoccerNewsRepository.getInstance().getRemoteApi().getNews().enqueue(new Callback<List<News>>() {
+            @Override
+            public void onResponse(@NonNull Call<List<News>> call, @NonNull Response<List<News>> response) {
+                if (response.isSuccessful()) {
+                    news.setValue(response.body());
+                    state.setValue(State.DONE);
+                } else {
+                    state.setValue(State.ERROR);
                 }
-            }));
-        });
+            }
 
-        newsViewModel.getState().observe(getViewLifecycleOwner(), state -> {
-            switch (state) {
-                case DOING:
-                    //TODO: Iniciar SwipeRefreshLayout (loading).
-                    break;
-                case DONE:
-                    //TODO: Finalizar SwipeRefreshLayout (loading).
-                    break;
-                case ERROR:
-                    //TODO: Finalizar SwipeRefreshLayout (loading).
-                    //TODO: Mostrar um erro genérico.
+            @Override
+            public void onFailure(@NonNull Call<List<News>> call, Throwable error) {
+                //FIXME Tirar o printStackTrace quando formos para produção!
+                error.printStackTrace();
+                state.setValue(State.ERROR);
             }
         });
-
-        return root;
     }
 
-    @Override
-    public void onDestroyView() {
-        super.onDestroyView();
-        binding = null;
+    public void saveNews(News news) {
+        AsyncTask.execute(() -> SoccerNewsRepository.getInstance().getLocalDb().newsDao().save(news));
     }
 
+    public LiveData<List<News>> getNews() {
+        return this.news;
+    }
 
+    public LiveData<State> getState() {
+        return this.state;
+    }
 }
